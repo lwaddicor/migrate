@@ -42,6 +42,7 @@ var (
 type Config struct {
 	MigrationsTable string
 	DatabaseName    string
+	NoTableLocks    bool
 }
 
 type Mysql struct {
@@ -128,6 +129,7 @@ func (m *Mysql) Open(url string) (database.Driver, error) {
 	purl.RawQuery = q.Encode()
 
 	migrationsTable := purl.Query().Get("x-migrations-table")
+	noTableLocks := purl.Query().Get("x-no-table-locks")
 
 	// use custom TLS?
 	ctls := purl.Query().Get("tls")
@@ -187,6 +189,7 @@ func (m *Mysql) Open(url string) (database.Driver, error) {
 	mx, err := WithInstance(db, &Config{
 		DatabaseName:    purl.Path,
 		MigrationsTable: migrationsTable,
+		NoTableLocks:    noTableLocks,
 	})
 	if err != nil {
 		return nil, err
@@ -205,6 +208,10 @@ func (m *Mysql) Close() error {
 }
 
 func (m *Mysql) Lock() error {
+	if m.config.NoTableLocks {
+		return nil
+	}
+
 	if m.isLocked {
 		return database.ErrLocked
 	}
@@ -230,6 +237,10 @@ func (m *Mysql) Lock() error {
 }
 
 func (m *Mysql) Unlock() error {
+	if m.config.NoTableLocks {
+		return nil
+	}
+
 	if !m.isLocked {
 		return nil
 	}
@@ -304,7 +315,6 @@ func (m *Mysql) Version() (version int, dirty bool, err error) {
 	switch {
 	case err == sql.ErrNoRows:
 		return database.NilVersion, false, nil
-
 	case err != nil:
 		if e, ok := err.(*mysql.MySQLError); ok {
 			if e.Number == 0 {
@@ -312,7 +322,6 @@ func (m *Mysql) Version() (version int, dirty bool, err error) {
 			}
 		}
 		return 0, false, &database.Error{OrigErr: err, Query: []byte(query)}
-
 	default:
 		return version, dirty, nil
 	}
